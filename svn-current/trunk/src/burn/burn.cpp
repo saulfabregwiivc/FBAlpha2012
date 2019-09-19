@@ -4,7 +4,13 @@
 #include "burnint.h"
 #include "burn_sound.h"
 #if defined(GEKKO) || defined(_XBOX1)
+#if defined(PGM_ONLY)
+#include "driverlist-gx_pgm.h"
+#elif defined(PSIKYO_ONLY)
+#include "driverlist-gx_psikyo.h"
+#else
 #include "driverlist-gx.h"
+#endif // End GEKKO
 #elif defined(CPS1_ONLY)
 #include "driverlist_cps1.h"
 #elif defined(CPS2_ONLY)

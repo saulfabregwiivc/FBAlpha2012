@@ -586,6 +586,30 @@ static int archive_load_rom(uint8_t *dest, int *wrote, int i)
    return 0;
 }
 
+#ifdef GEKKO
+#include <unistd.h> // sleep
+#include <dirent.h>
+// Gets the cache directory containing [driver name].gfx.
+int get_cache_path(char *path)
+{
+	const char *system_directory_c = NULL;
+	environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_directory_c);
+	sprintf(path, "%s/cache/", system_directory_c);
+
+	DIR *dir = opendir(path);
+	if (dir)
+	{
+		closedir(dir);
+	}
+	else
+	{
+ 		printf("\nNo cache directory found!\nPlease create a 'cache' folder in %s", system_directory_c);
+		sleep(8);
+		exit(0);
+	}
+}
+#endif
+
 // This code is very confusing. The original code is even more confusing :(
 static bool open_archive()
 {

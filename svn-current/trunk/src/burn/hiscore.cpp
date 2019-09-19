@@ -48,7 +48,7 @@ static void set_cpu_type()
 	{
 		nCpuType = 5;			// Zilog Z80
 	}
-#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY))
+#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY) || defined(PGM_ONLY) || defined(PSIKYO_ONLY))
 	else if (nVezCount)
 	{
 		nCpuType = 2;			// NEC V30 / V33
@@ -103,7 +103,7 @@ static void cpu_open(INT32 nCpu)
 			ZetOpen(nCpu);
 		break;
 
-#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY))
+#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY) || defined(PGM_ONLY) || defined(PSIKYO_ONLY))
 		case 2:
 			VezOpen(nCpu);
 		break;
@@ -151,7 +151,7 @@ static void cpu_close()
 			ZetClose();
 		break;
 
-#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY))
+#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY) || defined(PGM_ONLY) || defined(PSIKYO_ONLY))
 		case 3:
 			Sh2Close();
 		break;
@@ -238,7 +238,7 @@ static UINT8 cpu_read_byte(UINT32 a)
 		case 5:
 			return ZetReadByte(a);
 
-#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY))
+#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY) || defined(PGM_ONLY) || defined(PSIKYO_ONLY))
 		case 3:
 			return Sh2ReadByte(a);
 
@@ -283,7 +283,7 @@ static void cpu_write_byte(UINT32 a, UINT8 d)
 			ZetWriteByte(a, d);
 		break;
 
-#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY))
+#if !(defined(CPS1_ONLY) || defined(CPS2_ONLY) || defined(NEOGEO_ONLY) || defined(PGM_ONLY) || defined(PSIKYO_ONLY))
 
 		case 3:
 			Sh2WriteByte(a, d);

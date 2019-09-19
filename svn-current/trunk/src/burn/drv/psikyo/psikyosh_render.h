@@ -1,4 +1,8 @@
 extern UINT8 *pPsikyoshTiles;
+#ifdef GEKKO
+extern bool BurnUseCache;
+extern UINT8 *vmtiles;
+#endif
 extern UINT32  *pPsikyoshSpriteBuffer;
 extern UINT32  *pPsikyoshBgRAM;
 extern UINT32  *pPsikyoshVidRegs;
