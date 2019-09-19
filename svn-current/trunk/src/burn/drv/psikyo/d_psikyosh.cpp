@@ -10,6 +10,14 @@
 #include "burn_ymf278b.h"
 #include "eeprom.h"
 #include "sh2_intf.h"
+#ifdef GEKKO
+#include <unistd.h>
+#include "libretro.h"
+#include "wii_vm.h"
+bool BurnUseCache = false;
+bool BurnCreateCache = false;
+static INT32 gfx_vmsize;
+#endif
 
 static UINT8 *AllMem;
 static UINT8 *MemEnd;
@@ -560,9 +568,9 @@ static INT32 MemIndex(INT32 gfxsize)
 	UINT8 *Next; Next = AllMem;
 
 	DrvSh2ROM		= Next; Next += 0x0200000;
-
+#ifndef GEKKO
 	pPsikyoshTiles		= Next; Next += gfxsize + 0x20000 /* empty banking */;
-
+#endif
 	DrvSndROM		= Next; Next += 0x0400000;
 
 	DrvEEPROM		= Next; Next += 0x0000100;
@@ -631,7 +639,20 @@ static void BurnSwapEndian(INT32 len)
 
 static void DrvGfxDecode(INT32 size)
 {
+#ifndef GEKKO
 	BurnSwap32(pPsikyoshTiles, size);
+#else
+	if(BurnCreateCache)
+	{
+		BurnSwap32(pPsikyoshTiles, 48*MB);
+		BurnSwap32(vmtiles, gfx_vmsize);
+		BurnCreateCache = false;
+	}
+	else
+	{
+		BurnSwap32(pPsikyoshTiles, size);
+	}
+#endif
 
 	if (strcmp(BurnDrvGetTextA(DRV_NAME), "soldivid") == 0) {
 		BurnByteswap(pPsikyoshTiles, size);
@@ -641,6 +662,84 @@ static void DrvGfxDecode(INT32 size)
 static INT32 DrvInit(INT32 (*LoadCallback)(), INT32 type, INT32 gfx_max, INT32 gfx_min)
 {
 	AllMem = NULL;
+
+#ifdef GEKKO
+	INT32 gfx_memsize;
+	FILE *BurnCacheFile;
+	char CacheName[1024];
+	char CacheDir[1024];
+
+	// Only use Virtual Memory for games with sprite roms larger than 48 MB.
+	if(gfx_max - gfx_min >= 48*MB)
+	{
+		BurnUseCache = true;
+		gfx_memsize = 48*MB;
+		gfx_vmsize = 8*MB;
+		get_cache_path(CacheDir);
+	}
+	else
+	{
+		BurnUseCache = false;
+		gfx_memsize = (gfx_max - gfx_min) + 0x40000;
+		gfx_vmsize = 8*MB;
+		pPsikyoshTiles = (UINT8*)BurnMalloc(gfx_memsize);
+	}
+
+	if(BurnUseCache)
+	{
+		sprintf(CacheName, "%s%s.gfx", CacheDir, BurnDrvGetTextA(DRV_NAME));
+		BurnCacheFile = fopen(CacheName, "rb");
+
+		if(!BurnCacheFile)
+		{
+			BurnCreateCache = true;
+		}
+		else
+		{
+			BurnCreateCache = false;
+		}
+		fclose(BurnCacheFile);
+
+		// Create a cache file containing the decoded gfx.
+		if(BurnCreateCache)
+		{
+			pPsikyoshTiles = (UINT8*)BurnMalloc(gfx_memsize);
+			vmtiles = (UINT8*)VM_Init(gfx_vmsize, ROMCACHE_SIZE);
+
+			printf("\n\nPlease wait. Loading files...");
+			if (LoadCallback) {
+				if (LoadCallback()) return 1;
+			}
+			printf("OK.\n");
+
+			printf("\ndecoding gfx...");
+			DrvGfxDecode(gfx_max - gfx_min);
+			printf("OK.\n");
+
+			printf("\nSaving cache file...");
+			BurnCacheFile = fopen(CacheName, "ab");
+			fwrite(pPsikyoshTiles, gfx_memsize, 1, BurnCacheFile);
+			fwrite(vmtiles, gfx_vmsize, 1, BurnCacheFile);
+			fclose(BurnCacheFile);
+			printf("OK.\n");
+		}
+		// Read the cache file
+		else
+		{
+			vmtiles = (UINT8*)VM_Init(gfx_vmsize, ROMCACHE_SIZE);
+			pPsikyoshTiles		= (UINT8*)BurnMalloc(gfx_memsize);
+
+			BurnCacheFile = fopen(CacheName, "rb");
+			printf("\n\nPlease wait. Reading %s...", CacheName);
+
+			fread(pPsikyoshTiles, gfx_memsize, 1, BurnCacheFile);
+			fread(vmtiles, gfx_vmsize, 1, BurnCacheFile);
+			fclose(BurnCacheFile);
+			printf("OK.\n");
+		}
+	}
+#endif
+
 	MemIndex(gfx_max - gfx_min);
 	INT32 nLen = MemEnd - (UINT8 *)0;
 	if ((AllMem = (UINT8 *)BurnMalloc(nLen)) == NULL) return 1;
@@ -657,7 +756,11 @@ static INT32 DrvInit(INT32 (*LoadCallback)(), INT32 type, INT32 gfx_max, INT32 g
 		le_to_be(DrvSh2ROM,0x200000);
 #endif
 		BurnSwapEndian(0x200000);
+#ifdef GEKKO
+	if(!BurnUseCache)
+#endif
 		DrvGfxDecode(gfx_max - gfx_min);
+
 		graphics_min_max[0] = gfx_min;
 		graphics_min_max[1] = gfx_max;
 	}
@@ -719,6 +822,18 @@ static INT32 DrvExit()
 	EEPROMExit();
 
 	BurnFree(AllMem);
+
+#ifdef GEKKO
+	BurnFree(pPsikyoshTiles);
+	pPsikyoshTiles = NULL;
+
+	if(BurnUseCache)
+	{
+		vmtiles = NULL;
+		VM_InvalidateAll();
+		VM_Deinit();
+	}
+#endif
 
 	speedhack_address = ~0;
 	memset (speedhack_pc, 0, 4 * sizeof(UINT32));
@@ -953,6 +1068,68 @@ static const UINT8 daraku_eeprom[16] = {
 
 static INT32 DarakuLoadCallback()
 {
+#ifdef GEKKO
+	if(BurnUseCache)
+	{
+		if(BurnCreateCache)
+		{
+			if (BurnLoadRom(pPsikyoshTiles + 0x0000000,  3, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x0000001,  4, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x0800000,  5, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x0800001,  6, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x1000000,  7, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x1000001,  8, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x1800000,  9, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x1800001, 10, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x2000000, 11, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x2000001, 12, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x2800000, 13, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x2800001, 14, 2)) return 1;
+
+			if (BurnLoadRom(vmtiles + 0x0000000, 15, 2)) return 1;
+			if (BurnLoadRom(vmtiles + 0x0000001, 16, 2)) return 1;
+
+			return 0;
+		}
+
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000001,  0, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000000,  1, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0100000,  2, 1)) return 1;
+
+		if (BurnLoadRom(DrvSndROM  + 0x0000000, 17, 1)) return 1;
+
+		memcpy (DrvEEPROM, daraku_eeprom, 0x10);
+
+		return 0;
+	}
+	else
+	{
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000001,  0, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000000,  1, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0100000,  2, 1)) return 1;
+
+		if (BurnLoadRom(pPsikyoshTiles + 0x0000000,  3, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x0000001,  4, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x0800000,  5, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x0800001,  6, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x1000000,  7, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x1000001,  8, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x1800000,  9, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x1800001, 10, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x2000000, 11, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x2000001, 12, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x2800000, 13, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x2800001, 14, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x3000000, 15, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x3000001, 16, 2)) return 1;
+
+		if (BurnLoadRom(DrvSndROM  + 0x0000000, 17, 1)) return 1;
+
+		memcpy (DrvEEPROM, daraku_eeprom, 0x10);
+
+		return 0;
+	}
+#else
 	if (BurnLoadRom(DrvSh2ROM  + 0x0000001,  0, 2)) return 1;
 	if (BurnLoadRom(DrvSh2ROM  + 0x0000000,  1, 2)) return 1;
 	if (BurnLoadRom(DrvSh2ROM  + 0x0100000,  2, 1)) return 1;
@@ -977,6 +1154,7 @@ static INT32 DarakuLoadCallback()
 	memcpy (DrvEEPROM, daraku_eeprom, 0x10);
 
 	return 0;
+#endif
 }
 
 static INT32 DarakuInit()
@@ -1127,6 +1305,55 @@ STD_ROM_FN(gunbird2)
 
 static INT32 Gunbird2LoadCallback()
 {
+#ifdef GEKKO
+	if(BurnUseCache)
+	{
+		if(BurnCreateCache)
+		{
+			if (BurnLoadRom(pPsikyoshTiles + 0x0000000,  3, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x0000001,  4, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x1000000,  5, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x1000001,  6, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x2000000,  7, 2)) return 1;
+			if (BurnLoadRom(pPsikyoshTiles + 0x2000001,  8, 2)) return 1;
+			if (BurnLoadRom(vmtiles + 0x0000000,  9, 2)) return 1;
+			if (BurnLoadRom(vmtiles + 0x0000001, 10, 2)) return 1;
+
+			return 0;
+		}
+
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000001,  0, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000000,  1, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0100000,  2, 1)) return 1;
+
+		if (BurnLoadRom(DrvSndROM  + 0x0000000, 11, 1)) return 1;
+
+		memcpy (DrvEEPROM, factory_eeprom, 0x10);
+
+		return 0;
+	}
+	else
+	{
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000001,  0, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0000000,  1, 2)) return 1;
+		if (BurnLoadRom(DrvSh2ROM  + 0x0100000,  2, 1)) return 1;
+
+		if (BurnLoadRom(pPsikyoshTiles + 0x0000000,  3, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x0000001,  4, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x1000000,  5, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x1000001,  6, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x2000000,  7, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x2000001,  8, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x3000000,  9, 2)) return 1;
+		if (BurnLoadRom(pPsikyoshTiles + 0x3000001, 10, 2)) return 1;
+
+		if (BurnLoadRom(DrvSndROM  + 0x0000000, 11, 1)) return 1;
+
+		memcpy (DrvEEPROM, factory_eeprom, 0x10);
+
+		return 0;
+	}
+#else
 	if (BurnLoadRom(DrvSh2ROM  + 0x0000001,  0, 2)) return 1;
 	if (BurnLoadRom(DrvSh2ROM  + 0x0000000,  1, 2)) return 1;
 	if (BurnLoadRom(DrvSh2ROM  + 0x0100000,  2, 1)) return 1;
@@ -1145,6 +1372,7 @@ static INT32 Gunbird2LoadCallback()
 	memcpy (DrvEEPROM, factory_eeprom, 0x10);
 
 	return 0;
+#endif
 }
 
 static INT32 Gunbird2Init()
@@ -1200,9 +1428,16 @@ static const UINT8 s1945iii_eeprom[16] = {
 static INT32 S1945iiiLoadCallback()
 {
 	INT32 nRet = Gunbird2LoadCallback();
-
+#ifdef GEKKO
+if(!BurnCreateCache)
+{
 	memcpy (DrvEEPROM + 0x00, factory_eeprom,  0x10);
 	memcpy (DrvEEPROM + 0xf0, s1945iii_eeprom, 0x10);
+}
+#else
+	memcpy (DrvEEPROM + 0x00, factory_eeprom,  0x10);
+	memcpy (DrvEEPROM + 0xf0, s1945iii_eeprom, 0x10);
+#endif
 
 	return nRet;
 }

@@ -2,6 +2,10 @@
 #include "pgm.h" 
 #include "arm7_intf.h"
 #include "v3021.h"
+#ifdef GEKKO
+#include <unistd.h>
+#include "wii_vm.h"
+#endif
 
 UINT8 PgmJoy1[8] = {0,0,0,0,0,0,0,0};
 UINT8 PgmJoy2[8] = {0,0,0,0,0,0,0,0};
@@ -529,7 +533,19 @@ static void expand_colourdata()
 			nPGMSPRMaskMaskLen <<= 1;
 		nPGMSPRMaskMaskLen-=1;
 
+#ifdef GEKKO
+	if(nPGMSPRColMaskLen > 8*MB)
+	{
+		PGMSPRColROM      = (UINT8*)VM_Init(nPGMSPRColMaskLen, ROMCACHE_SIZE);
+		printf("\n\nLoading sprite roms...\n");
+	}
+	else
+	{
 		PGMSPRColROM = (UINT8*)BurnMalloc(nPGMSPRColMaskLen);
+	}
+#else
+	PGMSPRColROM = (UINT8*)BurnMalloc(nPGMSPRColMaskLen);
+#endif
 		nPGMSPRColMaskLen -= 1;
 	}
 
@@ -586,7 +602,9 @@ static void expand_colourdata()
 		PGMSPRColROM[cnt*3+1] = (colpack >> 5 ) & 0x1f;
 		PGMSPRColROM[cnt*3+2] = (colpack >> 10) & 0x1f;
 	}
-
+#ifdef GEKKO
+printf("done.\n");
+#endif
 	BurnFree (tmp);
 }
 
@@ -724,6 +742,12 @@ INT32 pgmExit()
 	BurnFree (PGMTileROMExp);
 	BurnFree (PGMSPRColROM);
 	BurnFree (PGMSPRMaskROM);
+
+#ifdef GEKKO
+	PGMSPRColROM = NULL;
+	VM_InvalidateAll();
+	VM_Deinit();
+#endif
 
 	nPGM68KROMLen = 0;
 	nPGMTileROMLen = 0;

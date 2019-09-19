@@ -3,7 +3,7 @@ LIBRETRO_OPTIMIZATIONS = 1
 FRONTEND_SUPPORTS_RGB565 = 1
 HAVE_GRIFFIN = 0
 EXTERNAL_ZLIB = 0
-INCLUDE_7Z_SUPPORT = 1
+INCLUDE_7Z_SUPPORT = 0
 
 # system platform
 ifeq ($(platform),)
@@ -51,6 +51,12 @@ else ifeq ($(target),cps2)
 else ifeq ($(target),cps3)
    TARGET_NAME := fbalpha2012_cps3
    FBA_DEFINES += -DTARGET=\"\ CPS-3\" -DCPS3_ONLY
+else ifeq ($(target),pgm)
+   TARGET_NAME := fbalpha2012_pgm
+   FBA_DEFINES += -DTARGET=\"\ PGM\" -DPGM_ONLY
+else ifeq ($(target),psikyo)
+   TARGET_NAME := fbalpha2012_psikyo
+   FBA_DEFINES += -DTARGET=\"\ PSIKYO\" -DPSIKYO_ONLY
 else ifeq ($(target),neogeo)
    TARGET_NAME := fbalpha2012_neogeo
    FBA_DEFINES += -DTARGET=\"\ Neo\ Geo\" -DNEOGEO_ONLY
@@ -273,6 +279,7 @@ else ifeq ($(platform), xenon)
 
 # Nintendo Game Cube / Wii / WiiU
 else ifneq (,$(filter $(platform), ngc wii wiiu))
+include $(DEVKITPPC)/wii_rules
    TARGET := $(TARGET_NAME)_libretro_$(platform).a
    CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc$(EXE_EXT)
    CXX = $(DEVKITPPC)/bin/powerpc-eabi-g++$(EXE_EXT)
@@ -281,6 +288,8 @@ else ifneq (,$(filter $(platform), ngc wii wiiu))
    PLATFORM_DEFINES := -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
    EXTERNAL_ZLIB = 1
    STATIC_LINKING = 1
+   CFLAGS += -DGEKKO -DHW_RVL -mrvl -mcpu=750 -meabi -mhard-float -DMSB_FIRST -D__ppc__
+	 CFLAGS += -I$(LIBOGC_INC) -I$(DEVKITPRO)/libogc/include -I$(DEVKITPRO)/libogc/include/ogc/machine
 
    # Nintendo WiiU
    ifneq (,$(findstring wiiu,$(platform)))
@@ -614,6 +623,49 @@ else ifeq ($(target),neogeo)
 		$(FBA_BURN_DIR)/burn_vector.cpp \
 		$(FBA_BURN_DIR)/tiles_generic.cpp
 
+# PGM Only
+else ifeq ($(target),pgm)
+   SOURCES_CXX := $(FBA_BURN_DIR)/devices/8255ppi.cpp \
+		$(FBA_BURN_DIR)/snd/ics2115.cpp \
+		$(FBA_BURN_DIR)/devices/eeprom.cpp \
+		$(FBA_BURN_DIR)/devices/v3021.cpp \
+		$(FBA_CPU_DIR)/m68000_intf.cpp \
+		$(FBA_CPU_DIR)/z80_intf.cpp \
+		$(FBA_CPU_DIR)/arm7_intf.cpp 
+
+   FBA_BURN_DIRS := $(PGM_DIR) \
+		$(FBA_BURN_DIR) \
+		$(FBA_BURN_DRIVERS_DIR)
+
+   FBA_CPU_DIRS := $(FBA_CPU_DIR)/a68k \
+		$(M68K_DIR) \
+		$(FBA_CPU_DIR)/z80 \
+		$(FBA_CPU_DIR)/arm7
+
+   BURN_BLACKLIST += $(CPS2_DIR)/d_cps1.cpp
+
+# PSIKYO Only
+else ifeq ($(target),psikyo)
+   SOURCES_CXX := $(FBA_BURN_DIR)/devices/eeprom.cpp \
+		$(FBA_BURN_DIR)/snd/burn_ym2610.cpp \
+		$(FBA_BURN_DIR)/snd/burn_ymf278b.cpp \
+		$(FBA_BURN_DIR)/snd/ymz280b.cpp \
+		$(FBA_CPU_DIR)/m68000_intf.cpp \
+		$(FBA_CPU_DIR)/z80_intf.cpp 
+
+   SOURCES_C :=	$(FBA_BURN_DIR)/snd/ay8910.c \
+		$(FBA_BURN_DIR)/snd/fm.c \
+		$(FBA_BURN_DIR)/snd/ymf278b.c \
+		$(FBA_BURN_DIR)/snd/ymdeltat.c
+
+   FBA_BURN_DIRS := $(FBA_BURN_DRIVERS_DIR)/psikyo \
+		$(FBA_BURN_DIR) \
+		$(FBA_BURN_DRIVERS_DIR)
+
+   FBA_CPU_DIRS := $(M68K_DIR) \
+		$(FBA_CPU_DIR)/z80 \
+		$(FBA_CPU_DIR)/sh2
+
 else
    SOURCES_CXX := $(LIBRETRO_DIR)/neocdlist.cpp
 
@@ -652,10 +704,15 @@ SOURCES_CXX += $(LIBRETRO_DIR)/libretro.cpp \
 	$(LIBRETRO_DIR)/retro_input.cpp
 SOURCES_C += $(filter-out $(BURN_BLACKLIST),$(foreach dir,$(FBA_SRC_DIRS),$(wildcard $(dir)/*.c)))
 
+ifeq ($(platform), wii)
+FBA_SSRCS := $(filter-out $(BURN_BLACKLIST),$(foreach dir,$(FBA_SRC_DIRS),$(wildcard $(dir)/*.S)))
+FBA_SOBJ := $(FBA_SSRCS:.S=.o)
+endif
+
 FBA_CXXOBJ := $(SOURCES_CXX:.cpp=.o)
 FBA_COBJ := $(SOURCES_C:.c=.o)
 
-OBJS := $(FBA_COBJ) $(FBA_CXXOBJ)
+OBJS := $(FBA_SOBJ) $(FBA_COBJ) $(FBA_CXXOBJ)
 
 FBA_DEFINES += -DUSE_SPEEDHACKS -D__LIBRETRO__ \
 	-D__LIBRETRO_OPTIMIZATIONS__ \
@@ -804,6 +861,12 @@ generate-files:
 
 %.o: %.c
 	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS) $(INCFLAGS)
+
+ifeq ($(platform), wii)
+%.o: %.S
+	@echo "CS $<"
+	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIRS)
+endif
 
 $(TARGET): $(OBJS)
 ifeq ($(STATIC_LINKING), 1)
