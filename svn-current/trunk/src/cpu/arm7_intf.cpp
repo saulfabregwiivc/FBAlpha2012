@@ -253,7 +253,7 @@ UINT16 Arm7_program_read_word_32le(UINT32 addr)
 #endif
 
 	if (membase[ READ][addr >> ARM7_PAGE_SHIFT] != NULL) {
-		return *((UINT16*)(membase[ READ][addr >> ARM7_PAGE_SHIFT] + (addr & ARM7_PAGE_WORD_AND)));
+		return BURN_ENDIAN_SWAP_INT16(*((UINT16*)(membase[ READ][addr >> ARM7_PAGE_SHIFT] + (addr & ARM7_PAGE_WORD_AND))));
 	}
 
 	if (pReadWordHandler) {
