@@ -9,7 +9,7 @@ extern "C" {
 
 #define MB (1024*1024)
 #define KB (1024)
-#define ROMCACHE_SIZE (1*MB)
+#define ROMCACHE_SIZE (512*KB)
 
 void* VM_Init(size_t VMSize, size_t MEMSize);
 void VM_Deinit(void);
