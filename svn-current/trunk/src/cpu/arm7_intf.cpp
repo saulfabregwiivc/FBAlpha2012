@@ -207,7 +207,7 @@ void Arm7_program_write_dword_32le(UINT32 addr, UINT32 data)
 #endif
 
 	if (membase[WRITE][addr >> ARM7_PAGE_SHIFT] != NULL) {
-		*((UINT32*)(membase[WRITE][addr >> ARM7_PAGE_SHIFT] + (addr & ARM7_PAGE_LONG_AND))) = BURN_ENDIAN_SWAP_INT16(data);
+		*((UINT32*)(membase[WRITE][addr >> ARM7_PAGE_SHIFT] + (addr & ARM7_PAGE_LONG_AND))) = BURN_ENDIAN_SWAP_INT32(data);
 		return;
 	}
 
@@ -333,7 +333,7 @@ UINT32 Arm7_program_opcode_dword_32le(UINT32 addr)
 	}
 
 	if (membase[FETCH][addr >> ARM7_PAGE_SHIFT] != NULL) {
-		return BURN_ENDIAN_SWAP_INT16(*((UINT32*)(membase[FETCH][addr >> ARM7_PAGE_SHIFT] + (addr & ARM7_PAGE_LONG_AND))));
+		return BURN_ENDIAN_SWAP_INT32(*((UINT32*)(membase[FETCH][addr >> ARM7_PAGE_SHIFT] + (addr & ARM7_PAGE_LONG_AND))));
 	}
 
 	// good enough for now...
